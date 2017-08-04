@@ -98,6 +98,16 @@ DCOS_AUTH_TOKEN=${DCOS_AUTH_TOKEN:=$ci_auth_token}
 DCOS_USER=${DCOS_USER:='bootstrapuser'}
 DCOS_PW=${DCOS_PW:='deleteme'}
 
+log_msg() {
+    echo `date -u +'%D %T'`: $1
+}
+
+banner() {
+    echo "================================================================================"
+    echo $1
+    echo "================================================================================"
+}
+
 demo_eval() {
     if $MANUAL_MODE; then
         printf "### Execute the following command: ###\n\n"
@@ -109,32 +119,6 @@ demo_eval() {
         eval $1
     fi
 
-    dcos --version
-
-    # assume login complete; check versions of dc/os and cli
-    DCOS_VERSION=$(dcos --version | grep "dcos.version" | cut -d'=' -f2)
-    if [ "$DCOS_VERSION" = "N/A" ]; then
-        errlen=$((49 + ${#DCOS_CLI_VER}))
-        printf '*%.s' $(eval "echo {1.."$(($errlen))"}")
-        printf "\n* Unable to determine DC/OS version with CLI (%s) *\n" $DCOS_CLI_VER
-        printf '*%.s' $(eval "echo {1.."$(($errlen))"}")
-        printf "\n"
-        exit 1
-    fi
-    # DC/OS Version Minor
-    DVM=$(echo $DCOS_VERSION | cut -d'.' -f2 | tr -cd "[:digit:]")
-    is_compat=0
-    [ $DVM -lt 10 ] && [ $DCVM -gt 4 ] && is_compat=1
-    [ $DVM -gt 9 ] && [ $DCVM -lt 5 ] && is_compat=1
-
-    if [ $is_compat -ne 0 ]; then
-        errlen=$((45 + ${#DCOS_VERSION} + ${#DCOS_CLI_VER}))
-        printf '*%.s' $(eval "echo {1.."$(($errlen))"}")
-        printf "\n* Incompatible DC/OS (%s) and CLI (%s) versions *\n" $DCOS_VERSION $DCOS_CLI_VER
-        printf '*%.s' $(eval "echo {1.."$(($errlen))"}")
-        printf "\n"
-        exit 1
-    fi
     user_continue
 }
 
@@ -157,10 +141,6 @@ is_running() {
     else
         return 1
     fi
-}
-
-log_msg() {
-    echo `date -u +'%D %T'`: $1
 }
 
 wait_for_deployment() {
@@ -193,16 +173,6 @@ expect eof
 EOF
 }
 
-
-
-
-banner() {
-    echo "================================================================================"
-    echo $1
-    echo "================================================================================"
-}
-
-# Check DC/OS CLI is actually installed
 banner "Check DC/OS CLI is actually installed"
 dcos --help &> /dev/null || ( echo 'DC/OS must be installed!' && exit 1 )
 DCOS_CLI_VER=$(dcos --version | grep dcoscli | cut -d'=' -f2)
@@ -210,16 +180,42 @@ DCOS_CLI_VER=$(dcos --version | grep dcoscli | cut -d'=' -f2)
 DCVM=$(echo $DCOS_CLI_VER | cut -d'.' -f2 | tr -cd "[:digit:]")
 [ $DCVM -gt 4 ] && USE_CLUSTER=1 || USE_CLUSTER=0
 
+banner "Check that DC/OS CLI version is compatible with DC/OS Version"
+# assume login complete; check versions of dc/os and cli
+DCOS_VERSION=$(dcos --version | grep "dcos.version" | cut -d'=' -f2)
+if [ "$DCOS_VERSION" = "N/A" ]; then
+    errlen=$((49 + ${#DCOS_CLI_VER}))
+    printf '*%.s' $(eval "echo {1.."$(($errlen))"}")
+    printf "\n* Unable to determine DC/OS version with CLI (%s) *\n" $DCOS_CLI_VER
+    printf '*%.s' $(eval "echo {1.."$(($errlen))"}")
+    printf "\n"
+    exit 1
+fi
+# DC/OS Version Minor
+DVM=$(echo $DCOS_VERSION | cut -d'.' -f2 | tr -cd "[:digit:]")
+is_compat=0
+[ $DVM -lt 10 ] && [ $DCVM -gt 4 ] && is_compat=1
+[ $DVM -gt 9 ] && [ $DCVM -lt 5 ] && is_compat=1
+
+if [ $is_compat -ne 0 ]; then
+    errlen=$((45 + ${#DCOS_VERSION} + ${#DCOS_CLI_VER}))
+    printf '*%.s' $(eval "echo {1.."$(($errlen))"}")
+    printf "\n* Incompatible DC/OS (%s) and CLI (%s) versions *\n" $DCOS_VERSION $DCOS_CLI_VER
+    printf '*%.s' $(eval "echo {1.."$(($errlen))"}")
+    printf "\n"
+    exit 1
+fi
+
 # Setup access to the desired DCOS cluster and install marathon lb
-banner "Setup access to the desired DCOS cluster and install marathon lb"
+banner "Setup access to the desired DCOS cluster"
 log_msg "Setting DCOS CLI to use $DCOS_URL"
 [ $USE_CLUSTER -eq 0 ] && demo_eval "dcos config set core.dcos_url $DCOS_URL"
 if $DCOS_OSS; then
-    log_msg "Starting DC/OS OSS Demo"
+    banner "Starting DC/OS OSS Demo"
     log_msg "Override default credentials with DCOS_AUTH_TOKEN"
     oss_login
 else
-    log_msg "Starting DC/OS Enterprise Demo"
+    banner "Starting DC/OS Enterprise Demo"
     log_msg "Override default credentials with --user and --pw"
     demo_eval ee_login
     # Get the dcos EE CLI
@@ -307,7 +303,7 @@ if $INFRA_ONLY; then
     exit 0
 fi
 
-banner "Deploying post-tweets"
+banner "Deploying post-tweeter"
 demo_eval "dcos marathon app add post-tweets.json"
 wait_for_deployment post-tweets
 
@@ -335,7 +331,7 @@ EOF
   fi
 
   if (cypress --help &> /dev/null); then
-    log_msg "Running cypress tests"
+    banner "Running cypress tests"
     demo_eval "yes | cypress update"
     demo_eval "yes | cypress run"
   else
@@ -347,9 +343,9 @@ fi
 log_msg "Pulling Tweets from $public_ip:10000"
 tweet_count=`curl -sSlvf $public_ip:10000 | grep 'class="tweet-content"' | wc -l`
 if [[ $tweet_count > 0 ]]; then
-    log_msg "Tweeter is up and running; $tweet_count tweets shown"
+    banner "Tweeter is up and running; $tweet_count tweets shown"
     exit 0
 else
-    log_msg "Failure: No tweets found!"
+    banner "Failure: No tweets found!"
     exit 1
 fi
