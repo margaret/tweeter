@@ -109,6 +109,8 @@ demo_eval() {
         eval $1
     fi
 
+    dcos --version
+
     # assume login complete; check versions of dc/os and cli
     DCOS_VERSION=$(dcos --version | grep "dcos.version" | cut -d'=' -f2)
     if [ "$DCOS_VERSION" = "N/A" ]; then
@@ -191,7 +193,17 @@ expect eof
 EOF
 }
 
+
+
+
+banner() {
+    echo "================================================================================"
+    echo $1
+    echo "================================================================================"
+}
+
 # Check DC/OS CLI is actually installed
+banner "Check DC/OS CLI is actually installed"
 dcos --help &> /dev/null || ( echo 'DC/OS must be installed!' && exit 1 )
 DCOS_CLI_VER=$(dcos --version | grep dcoscli | cut -d'=' -f2)
 # DC/OS CLI Version Minor
@@ -199,6 +211,7 @@ DCVM=$(echo $DCOS_CLI_VER | cut -d'.' -f2 | tr -cd "[:digit:]")
 [ $DCVM -gt 4 ] && USE_CLUSTER=1 || USE_CLUSTER=0
 
 # Setup access to the desired DCOS cluster and install marathon lb
+banner "Setup access to the desired DCOS cluster and install marathon lb"
 log_msg "Setting DCOS CLI to use $DCOS_URL"
 [ $USE_CLUSTER -eq 0 ] && demo_eval "dcos config set core.dcos_url $DCOS_URL"
 if $DCOS_OSS; then
@@ -235,6 +248,7 @@ else
 EOF
 fi
 
+banner "Installing packages"
 if $INFRA_ONLY; then
     install_packages=(marathon-lb cassandra kafka)
 else
@@ -256,10 +270,12 @@ for pkg in ${install_packages[*]}; do
     demo_eval "$cmd"
 done
 
+banner "Waiting for deployment"
 # query until services are listed as running
 wait_for_deployment ${install_packages[*]}
 
 # once running, deploy tweeter app and then post to it
+banner "Deploying tweeter"
 demo_eval "dcos marathon app add tweeter.json"
 wait_for_deployment tweeter
 
@@ -291,6 +307,7 @@ if $INFRA_ONLY; then
     exit 0
 fi
 
+banner "Deploying post-tweets"
 demo_eval "dcos marathon app add post-tweets.json"
 wait_for_deployment post-tweets
 
